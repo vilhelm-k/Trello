@@ -109,16 +109,27 @@ const getTrelloListsFromBoard = (boardId: string): TrelloList[] => {
 };
 
 const getTrelloMoveCardActions = (cardId: string): TrelloAction[] => {
-  const url = `${URL_BASE}/cards/${cardId}/actions?filter=updateCard&${AUTH_PARAMS}`;
-  const response = UrlFetchApp.fetch(url);
-  const json = response.getContentText();
-  const actions = JSON.parse(json);
-  return actions.filter((action: TrelloAction) => action.data.listBefore && action.data.listAfter);
+  const maxPage = 19;
+  const actionsPerPage = 50;
+  const allActions: TrelloAction[] = [];
+
+  for (let page = 0; page <= maxPage; page++) {
+    const url = `${URL_BASE}/cards/${cardId}/actions?filter=updateCard&page=${page}&${AUTH_PARAMS}`;
+    const response = UrlFetchApp.fetch(url);
+    const json = response.getContentText();
+    const actions = JSON.parse(json);
+
+    if (actions.length === 0) break;
+    allActions.push(...actions);
+    if (actions.length < actionsPerPage) break;
+  }
+
+  return allActions.filter((action: TrelloAction) => action.data.listBefore && action.data.listAfter);
 };
 
 const flattenObject = (obj: Record<string, any>, prefix: string = '', result: Record<string, any> = {}) => {
   Object.keys(obj).forEach((key) => {
-    const newKey = prefix ? `${prefix}.${key}` : key;
+    const newKey = prefix ? `${prefix}_${key}` : key;
     if (typeof obj[key] === 'object' && obj[key] !== null) {
       flattenObject(obj[key], newKey, result);
     } else {
