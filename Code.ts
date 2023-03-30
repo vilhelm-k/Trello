@@ -1,3 +1,5 @@
+// Original Typescript code: https://github.com/vilhelm-k/Trello
+
 interface TrelloList {
   id: string;
   name: string;
