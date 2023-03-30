@@ -1,0 +1,7 @@
+/.clasp.json
+/.eslintrc
+/node_modules
+/package-lock.json
+/package.json
+/tsconfig.json
+/Secrets.ts
