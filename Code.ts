@@ -108,13 +108,13 @@ const getTrelloListsFromBoard = (boardId: string): TrelloList[] => {
   return JSON.parse(json);
 };
 
-const getTrelloMoveCardActions = (cardId: string): TrelloAction[] => {
+const getTrelloCardActions = (cardId: string): TrelloAction[] => {
   const maxPage = 19;
   const actionsPerPage = 50;
   const allActions: TrelloAction[] = [];
 
   for (let page = 0; page <= maxPage; page++) {
-    const url = `${URL_BASE}/cards/${cardId}/actions?filter=updateCard&page=${page}&${AUTH_PARAMS}`;
+    const url = `${URL_BASE}/cards/${cardId}/actions?filter=updateCard,createCard&page=${page}&${AUTH_PARAMS}`;
     const response = UrlFetchApp.fetch(url);
     const json = response.getContentText();
     const actions = JSON.parse(json);
@@ -124,7 +124,7 @@ const getTrelloMoveCardActions = (cardId: string): TrelloAction[] => {
     if (actions.length < actionsPerPage) break;
   }
 
-  return allActions.filter((action: TrelloAction) => action.data.listBefore && action.data.listAfter);
+  return allActions;
 };
 
 const flattenObject = (obj: Record<string, any>, prefix: string = '', result: Record<string, any> = {}) => {
@@ -162,10 +162,10 @@ const importFromTrello = (): void => {
   const cards = getTrelloCardsFromBoard(TRELLO_BOARD_ID);
   const cardMoveActions = cards
     .filter((card) => card.idList !== TRELLO_SPAWN_LIST)
-    .flatMap((card) => getTrelloMoveCardActions(card.id));
+    .flatMap((card) => getTrelloCardActions(card.id));
 
   const clearResource = {
-    ranges: [LISTS_IMPORT_SHEET_NAME, CARDS_IMPORT_SHEET_NAME, CARD_MOVE_ACTIONS_IMPORT_SHEET_NAME],
+    ranges: [LISTS_IMPORT_SHEET_NAME, CARDS_IMPORT_SHEET_NAME, CARD_ACTIONS_IMPORT_SHEET_NAME],
   };
   const updateResource = {
     valueInputOption: 'USER_ENTERED',
@@ -180,7 +180,7 @@ const importFromTrello = (): void => {
         values: createTableFromObjectsWithKeys(cards),
       },
       {
-        range: CARD_MOVE_ACTIONS_IMPORT_SHEET_NAME,
+        range: CARD_ACTIONS_IMPORT_SHEET_NAME,
         values: createTableFromObjectsWithKeys(cardMoveActions),
       },
     ],
