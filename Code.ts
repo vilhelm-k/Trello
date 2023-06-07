@@ -1,130 +1,44 @@
-// Original Typescript code: https://github.com/vilhelm-k/Trello
-
-interface TrelloList {
-  id: string;
-  name: string;
-  closed: boolean;
-  pos: number;
-  softLimit: string;
-  idBoard: string;
-  subscribed: boolean;
-  limits: any;
-}
-
-interface TrelloCard {
-  id: string;
-  address: string | null;
-  badges: any;
-  checkItemStates: string[];
-  closed: boolean;
-  coordinates: string | null;
-  creationMethod: string | null;
-  dateLastActivity: string;
-  desc: string;
-  descData: any;
-  due: string | null;
-  dueReminder: string | null;
-  email: string;
-  idBoard: string;
-  idChecklists: Array<string | any>;
-  idLabels: Array<string | any>;
-  idList: string;
-  idMembers: string[];
-  idMembersVoted: string[];
-  idShort: number;
-  idAttachmentCover: string;
-  labels: string[];
-  limits: any;
-  locationName: string | null;
-  manualCoverAttachment: boolean;
-  name: string;
-  pos: number;
-  shortLink: string;
-  shortUrl: string;
-  subscribed: boolean;
-  url: string;
-  cover: any;
-}
-
-interface TrelloAction {
-  id: string;
-  idMemberCreator: string;
-  data: ActionData;
-  type: string;
-  date: string;
-  limits: any;
-  display: any;
-  memberCreator: any;
-}
-
-interface ActionData {
-  board?: {
-    id: string;
-    name: string;
-    shortLink: string;
-  };
-  card?: {
-    id: string;
-    name: string;
-    idShort: number;
-    shortLink: string;
-  };
-  listBefore?: {
-    id: string;
-    name: string;
-  };
-  listAfter?: {
-    id: string;
-    name: string;
-  };
-  list?: {
-    id: string;
-    name: string;
-  };
-  old?: {
-    idList?: string;
-    name?: string;
-    desc?: string;
-    due?: string | null;
-    closed?: boolean;
-    pos?: number;
-  };
-}
-
 const onOpen = () =>
   SpreadsheetApp.getUi().createMenu('RENOMATE').addItem('Importera från Trello', 'importFromTrello').addToUi();
 
-const getTrelloCardsFromBoard = (boardId: string): TrelloCard[] => {
-  const url = `${URL_BASE}/boards/${boardId}/cards?${AUTH_PARAMS}`;
+const getBoardWithNestedResources = (boardId: string): any => {
+  const params = {
+    cards: 'all',
+    card_pluginData: true,
+    lists: 'all',
+    members: 'all',
+    customFields: true,
+    labels: 'all',
+    card_customFieldItems: true,
+  };
+  const paramsString = Object.entries(params)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+  const url = `https://api.trello.com/1/boards/${boardId}?${AUTH_PARAMS}&${paramsString}`;
+
   const response = UrlFetchApp.fetch(url);
   const json = response.getContentText();
   return JSON.parse(json);
 };
 
-const getTrelloListsFromBoard = (boardId: string): TrelloList[] => {
-  const url = `${URL_BASE}/boards/${boardId}/lists?${AUTH_PARAMS}`;
-  const response = UrlFetchApp.fetch(url);
-  const json = response.getContentText();
-  return JSON.parse(json);
-};
+const getBoardActions = (boardId: string): any[] => {
+  const limit = 1000; // Maximum actions per page
+  const baseUrl = `https://api.trello.com/1/boards/${boardId}/actions?${AUTH_PARAMS}&limit=${limit}`;
+  const actions: any[] = [];
+  let lastActionId: string | null = null;
 
-const getTrelloCardActions = (cardId: string): TrelloAction[] => {
-  const maxPage = 19;
-  const actionsPerPage = 50;
-  const allActions: TrelloAction[] = [];
-
-  for (let page = 0; page <= maxPage; page++) {
-    const url = `${URL_BASE}/cards/${cardId}/actions?filter=updateCard,createCard&page=${page}&${AUTH_PARAMS}`;
+  while (true) {
+    const url = lastActionId ? `${baseUrl}&before=${lastActionId}` : baseUrl;
     const response = UrlFetchApp.fetch(url);
     const json = response.getContentText();
-    const actions = JSON.parse(json);
+    const batchActions = JSON.parse(json);
 
-    if (actions.length === 0) break;
-    allActions.push(...actions);
-    if (actions.length < actionsPerPage) break;
+    if (batchActions.length === 0) break; // No more actions to fetch
+    actions.push(...batchActions);
+    if (batchActions.length < limit) break; // Last batch fetched
+    lastActionId = batchActions[batchActions.length - 1].id;
   }
-
-  return allActions;
+  return actions;
 };
 
 const flattenObject = (obj: Record<string, any>, prefix: string = '', result: Record<string, any> = {}) => {
@@ -158,34 +72,52 @@ const createTableFromObjectsWithKeys = (objects: Record<string, any>[]): any[][]
 };
 
 const importFromTrello = (): void => {
-  const lists = getTrelloListsFromBoard(TRELLO_BOARD_ID);
-  const cards = getTrelloCardsFromBoard(TRELLO_BOARD_ID);
-  const cardMoveActions = cards
-    .filter((card) => card.idList !== TRELLO_SPAWN_LIST)
-    .flatMap((card) => getTrelloCardActions(card.id));
-
+  const board = getBoardWithNestedResources(TRELLO_BOARD_ID);
+  console.log('got the board');
+  const actions = getBoardActions(TRELLO_BOARD_ID);
+  console.log('got the actions');
+  const { labels, lists, members, customFields } = board;
+  const cards = board.cards.map((card: any) => {
+    card.customFieldItems.forEach((element: any) => {
+      card[element.idCustomField] = element.value;
+    });
+    delete card.customFieldItems;
+    return card;
+  });
   const clearResource = {
-    ranges: [LISTS_IMPORT_SHEET_NAME, CARDS_IMPORT_SHEET_NAME, CARD_ACTIONS_IMPORT_SHEET_NAME],
+    ranges: [LISTS_IMPORT_SHEET_NAME, CARDS_IMPORT_SHEET_NAME, ACTIONS_IMPORT_SHEET_NAME],
   };
   const updateResource = {
     valueInputOption: 'USER_ENTERED',
     includeValuesInResponse: false,
     data: [
       {
-        range: LISTS_IMPORT_SHEET_NAME,
-        values: createTableFromObjectsWithKeys(lists),
-      },
-      {
         range: CARDS_IMPORT_SHEET_NAME,
         values: createTableFromObjectsWithKeys(cards),
       },
       {
-        range: CARD_ACTIONS_IMPORT_SHEET_NAME,
-        values: createTableFromObjectsWithKeys(cardMoveActions),
+        range: LABELS_IMPORT_SHEET_NAME,
+        values: createTableFromObjectsWithKeys(labels),
+      },
+      {
+        range: LISTS_IMPORT_SHEET_NAME,
+        values: createTableFromObjectsWithKeys(lists),
+      },
+      {
+        range: MEMBERS_IMPORT_SHEET_NAME,
+        values: createTableFromObjectsWithKeys(members),
+      },
+      {
+        range: ACTIONS_IMPORT_SHEET_NAME,
+        values: createTableFromObjectsWithKeys(actions),
+      },
+      {
+        range: CUSTOMFIELDS_IMPORT_SHEET_NAME,
+        values: createTableFromObjectsWithKeys(customFields),
       },
     ],
   };
-
+  console.log('importing...');
   Sheets.Spreadsheets?.Values?.batchClear(clearResource, SPREADSHEET_ID);
   Sheets.Spreadsheets?.Values?.batchUpdate(updateResource, SPREADSHEET_ID);
 };
